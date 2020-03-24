@@ -1,0 +1,110 @@
+import typing
+
+import colorsys
+import math
+import numpy as np  # type: ignore
+import pprint as pp
+
+
+from PIL import Image  # type: ignore
+
+
+def colorval_to_rgb(color_val: int, max_val: int) -> typing.Tuple[int, int, int]:
+    assert color_val >= 0, "color_val must be non-negative, given value is {0}".format(
+        color_val
+    )
+    assert max_val >= 0, "max_val must be non-negative, given value is {0}".format(
+        max_val
+    )
+    assert (
+        max_val >= color_val
+    ), "max_val must be greater than or equal to color_val, max_val is {0} and color_val is {1}".format(
+        max_val, color_val
+    )
+    r, g, b = colorsys.hsv_to_rgb(float(color_val) / float(max_val), 1, 1)
+    return (math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+
+
+def seed_generator(seed: int = None) -> int:
+    if seed:
+        s = seed
+        np.random.seed(seed=s)
+    else:
+        np.random.seed()
+        s = np.random.randint((2 ** 32), size=1)[0]
+        np.random.seed(seed=s)
+    return s
+
+
+def random_array(num_values, width, height):
+    init_universe = np.random.randint(num_values, size=(height, width))
+    return init_universe
+
+
+def colorbar_image():
+    h, w = 1024, 1024
+    imagedata = np.zeros((h, w, 3), dtype=np.uint8)
+    for line in range(0, h):
+        imagedata[line, 0:w] = list(colorval_to_rgb(line, h - 1))
+    img = Image.fromarray(imagedata, "RGB")
+    img.save("colorbar.png")
+
+
+class Universe:
+    num_values: int
+
+    def __init__(
+        self, num_values: int, width: int, height: int, random: bool = True
+    ) -> None:
+        if random:
+            self.universe_array = random_array(num_values, width, height)
+        else:
+            self.universe_array = np.zeros(width, height)
+
+        self.num_values = num_values
+
+    def height(self) -> int:
+        return self.universe_array.shape[0]
+
+    def width(self) -> int:
+        return self.universe_array.shape[1]
+
+    def next_cycle(self) -> "Universe":
+        new_universe = Universe(
+            num_values=self.num_values,
+            width=self.width(),
+            height=self.height(),
+            random=False,
+        )
+
+        n_uni = new_universe.universe_array
+        o_uni = self.universe_array
+        nv = self.num_values
+        w = self.width()
+        h = self.height()
+        
+        it = np.nditer(o_uni, op_flags=["readwrite", "f_index"])
+        while not it.finished:
+            y = it.multi_index[0]
+            x = it.multi_index[1]
+            
+            if o_uni[(y - 1) % h][x] == (o_uni[y][x] - 1) % nv:
+                n_uni[y][x] = o_uni[(y - 1) % h][x]
+                
+            elif o_uni[(y + 1) % h][x] == (o_uni[y][x] - 1) % nv:
+                n_uni[y][x] = o_uni[(y + 1) % h][x]
+                
+            elif o_uni[y][(x - 1) % w] == (o_uni[y][x] - 1) % nv:
+                n_uni[y][x] = o_uni[y][(x -1)%w]
+
+            elif o_uni[y][(x + 1) % w] == (o_uni[y][x] - 1) % nv:
+                n_uni[y][x] = o_uni[y][(x +1)%w]
+
+            else:
+                n_uni[y][x] = o_uni[y][x]
+        return new_universe
+
+
+if __name__ == "__main__":
+    pp.pprint(seed_generator())
+    colorbar_image()
