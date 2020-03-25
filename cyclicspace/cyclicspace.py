@@ -1,4 +1,7 @@
+from numba import jit, prange
+
 import typing
+
 
 import colorsys
 import math
@@ -50,6 +53,34 @@ def colorbar_image():
     img.save("colorbar.png")
 
 
+
+@jit(nopython=True)#, parallel=True)    
+def neighbors(y,x,w,h):
+#    n = [(-1,-1),(-1,0),(-1,1),
+#         (0,-1),(0,1),
+#         (1,-1),(1,0), (1,1)]
+    n = [(-1,0),(1,0),(0,-1),(0,1)]
+    for p in n:
+        yield ((p[0]+y)%h,(p[1]+x)%w)
+    
+@jit(nopython=True)#, parallel=True)
+def calc_cycle(o_uni, n_uni, nv, w, h):
+    for y in prange(0,h):
+        for x in prange(0,w):
+            for e in neighbors(y=y,x=x,w=w,h=h):
+                found = False
+                y2 = e[0]
+                x2 = e[1]
+                if(o_uni[y][x] == (o_uni[y2][x2]+1) % nv):
+                    found = True
+                    n_uni[y][x] = o_uni[y2][x2]
+                    break
+            if not found:
+                n_uni[y][x] = o_uni[y][x]
+    return
+
+
+    
 class Universe:
     num_values: int
 
@@ -59,7 +90,7 @@ class Universe:
         if random:
             self.universe_array = random_array(num_values, width, height)
         else:
-            self.universe_array = np.zeros(width, height)
+            self.universe_array = np.zeros((height,width))
 
         self.num_values = num_values
 
@@ -68,6 +99,9 @@ class Universe:
 
     def width(self) -> int:
         return self.universe_array.shape[1]
+
+
+
 
     def next_cycle(self) -> "Universe":
         new_universe = Universe(
@@ -82,29 +116,48 @@ class Universe:
         nv = self.num_values
         w = self.width()
         h = self.height()
-        
-        it = np.nditer(o_uni, op_flags=["readwrite", "f_index"])
+
+        calc_cycle(o_uni = o_uni, n_uni = n_uni, nv = nv, w = w, h = h)
+
+        return new_universe
+
+    
+    def iter(self: 'Universe') -> 'typing.Iterator[Universe]':
+        next = self
+        while True:
+            yield next
+            next = next.next_cycle()
+            
+    def image(self: 'Universe'):
+        image_data = np.zeros((self.height(), self.width(), 3), dtype=np.uint8)
+        it = np.nditer(self.universe_array, flags=["multi_index"])
         while not it.finished:
             y = it.multi_index[0]
             x = it.multi_index[1]
-            
-            if o_uni[(y - 1) % h][x] == (o_uni[y][x] - 1) % nv:
-                n_uni[y][x] = o_uni[(y - 1) % h][x]
-                
-            elif o_uni[(y + 1) % h][x] == (o_uni[y][x] - 1) % nv:
-                n_uni[y][x] = o_uni[(y + 1) % h][x]
-                
-            elif o_uni[y][(x - 1) % w] == (o_uni[y][x] - 1) % nv:
-                n_uni[y][x] = o_uni[y][(x -1)%w]
+            image_data[y][x]=colorval_to_rgb(self.universe_array[y][x], self.num_values)
+            it.iternext()
 
-            elif o_uni[y][(x + 1) % w] == (o_uni[y][x] - 1) % nv:
-                n_uni[y][x] = o_uni[y][(x +1)%w]
-
-            else:
-                n_uni[y][x] = o_uni[y][x]
-        return new_universe
+        return Image.fromarray(image_data, "RGB")
 
 
-if __name__ == "__main__":
+import cProfile
+    
+def main():
     pp.pprint(seed_generator())
-    colorbar_image()
+    uni = Universe(num_values=16, width=300, height=300, random=True)
+    b = 0
+    for i in uni.iter():
+        b = b+1
+        print ("started " + "image-{:08d}.png".format(b))
+        i.image().save("img/image-{:08d}.png".format(b))
+        print ("saved " + "image-{:08d}.png".format(b))
+        print()
+
+
+
+
+
+    
+if __name__ == "__main__":
+    main()
+#    colorbar_image()
